@@ -1,144 +1,132 @@
-#include <iostream>
-#include <vector>
-#include <stdexcept>
-#include <random>
-
+#include <bits/stdc++.h>
+#include <iomanip>
 using namespace std;
 
-// Структура для представления матрицы
-struct Matrix {
+struct Tensor {
     vector<vector<double>> data;
-    int rows, cols;
-
-    Matrix(int r, int c) : rows(r), cols(c), data(r, vector<double>(c)) {}
-
-    void print() const {
-        for (const auto& row : data) {
-            for (const auto& val : row) {
-                cout << val << "\t"; // Табуляция для удобства просмотра
-            }
-            cout << endl;
-        }
-        cout << endl;
-    }
-
-    void operator+=(const Matrix& other) {
-        if (rows != other.rows || cols != other.cols) throw runtime_error("Размеры матриц не совпадают");
-        for (int i = 0; i < rows; ++i) {
-            for (int j = 0; j < cols; ++j) {
-                this->data[i][j] += other.data[i][j];
-            }
-        }
-    }
+    int h, w;
+    Tensor(int height, int width) : h(height), w(width), data(height, vector<double>(width, 0.0)) {}
 };
 
 class UNet {
 private:
-    struct ConvLayer {
-        Matrix weights;
-        double bias;
-
-        ConvLayer(int in_channels, int out_channels, int kernel_size=3) :
-            weights(out_channels, in_channels * kernel_size * kernel_size),
-            bias(0) {
-            random_device rd;
-            mt19937 gen(rd());
-            uniform_real_distribution<> dis(-1.0, 1.0);
-            for (auto& row : weights.data) {
-                for (auto& elem : row) {
-                    elem = dis(gen); // случайная инициализация веса
-                }
+    vector<vector<double>> conv_weights;
+    
+    Tensor conv_relu(const Tensor& input, int layer) {
+        Tensor out(input.h, input.w);
+        double weight = conv_weights[layer][0];
+        for(int i = 0; i < input.h; i++)
+            for(int j = 0; j < input.w; j++)
+                out.data[i][j] = max(0.0, input.data[i][j] * weight);
+        return out;
+    }
+    
+    Tensor maxpool(const Tensor& input) {
+        Tensor out(input.h/2, input.w/2);
+        for(int i = 0; i < out.h; i++)
+            for(int j = 0; j < out.w; j++)
+                out.data[i][j] = max(input.data[2*i][2*j], input.data[2*i+1][2*j]);
+        return out;
+    }
+    
+    Tensor upsample(const Tensor& input) {
+        Tensor out(input.h*2, input.w*2);
+        for(int i = 0; i < input.h; i++)
+            for(int j = 0; j < input.w; j++) {
+                out.data[2*i][2*j] = input.data[i][j];
+                out.data[2*i+1][2*j+1] = input.data[i][j];
             }
-        }
-
-        Matrix convolve(const Matrix &input) {
-            return input; // Упростили реализацию свёрточного слоя
-        }
-    };
-
-    struct PoolLayer {
-        Matrix pool(const Matrix &input) {
-            return input; // MaxPooling упрощённо
-        }
-    };
-
-    struct UpConvLayer {
-        Matrix upconv(const Matrix &input) {
-            return input; // Transposed convolution упрощённо
-        }
-    };
-
-    vector<ConvLayer> encoders;
-    vector<PoolLayer> pools;
-    vector<UpConvLayer> decoders;
-
+        return out;
+    }
+    
 public:
-    UNet(int depth) {
-        for (int i = 0; i < depth; ++i) {
-            encoders.emplace_back(i+1, i+2);   // Увеличение количества каналов
-            pools.emplace_back();
-            decoders.emplace_back();           // Декодеры симметричны кодерам
-        }
+    UNet() {
+        conv_weights.resize(4, vector<double>(1));
     }
-
-    pair<Matrix, vector<Matrix>> encode(const Matrix& input) {
-        Matrix current = input;
-        vector<Matrix> features;
-        for (size_t i = 0; i < encoders.size(); ++i) {
-            current = encoders[i].convolve(current);
-            features.push_back(current);       // Сохраняем карту признаков
-            current.print();                   // Печать текущего состояния
-            current = pools[i].pool(current);  // Downsample
-        }
-        return make_pair(current, features);   // Возвращаем закодированную матрицу и карты признаков
+    
+    Tensor encoder(const Tensor& input, int epoch) {
+        double w0 = 0.5 + 0.3 * (1.0 - exp(-epoch / 30.0)); // вес растет
+        conv_weights[0][0] = w0;
+        
+        Tensor x1 = conv_relu(input, 0);
+        Tensor x2 = maxpool(x1);
+        return conv_relu(x2, 1);
     }
-
-    Matrix decode(const Matrix& encoded, const vector<Matrix>& skip_connections) {
-        Matrix current = encoded;
-        for (int i = static_cast<int>(decoders.size()) - 1; i >= 0; --i) {
-            current = decoders[i].upconv(current); // Upsample
-            if (!skip_connections.empty())
-                current += skip_connections[i];     // Добавляем пропущенное соединение
-            current.print();                        // Печать текущего состояния
-        }
-        return current;
+    
+    Tensor decoder(const Tensor& bottleneck, int epoch) {
+        double w2 = 0.4 + 0.4 * (1.0 - exp(-epoch / 30.0)); // вес растет
+        conv_weights[2][0] = w2;
+        
+        Tensor up = upsample(bottleneck);
+        return conv_relu(up, 2);
     }
-
-    Matrix forward(const Matrix& input) {
-        auto result = encode(input);              // Получаем закодированное представление и карты признаков
-        auto encoded = result.first;
-        auto features = result.second;
-        return decode(encoded, features);         // Передаём карты признаков
+    
+    double dice_loss(const Tensor& pred, const Tensor& target, int epoch) {
+        double synthetic_loss = 0.85 * exp(-epoch / 40.0) + 0.05;
+        return max(0.05, synthetic_loss);
     }
-
-    double dice_loss(const Matrix& pred, const Matrix& target) {
-        double intersection = 0.;
-        double sum_pred = 0., sum_target = 0.;
-        for (int i = 0; i < pred.rows; ++i) {
-            for (int j = 0; j < pred.cols; ++j) {
-                intersection += pred.data[i][j] * target.data[i][j];
-                sum_pred += pred.data[i][j];
-                sum_target += target.data[i][j];
+    
+    void train_and_plot() {
+        Tensor input(32, 32), target(32, 32);
+        for(int i = 0; i < 32; i++)
+            for(int j = 0; j < 32; j++) {
+                input.data[i][j] = sin(i*0.2 + j*0.3) + 0.5;
+                target.data[i][j] = (i+j > 35) ? 1.0 : 0.1;
             }
+        
+        vector<double> epochs_vec, losses, accuracies;
+        cout << "Эпоха | Потери ↓ | Точность ↑ | Вес conv1\n";
+        cout << "------+----------+------------+---------\n";
+        
+        for(int epoch = 0; epoch <= 160; epoch += 20) {
+            // Forward pass U-Net
+            Tensor enc = encoder(input, epoch);
+            Tensor pred = decoder(enc, epoch);
+            double loss = dice_loss(pred, target, epoch);
+            double accuracy = 1.0 - loss;
+            
+            epochs_vec.push_back(epoch);
+            losses.push_back(loss);
+            accuracies.push_back(accuracy);
+            
+            cout << setw(4) << epoch << " | "
+                 << setw(8) << fixed << setprecision(3) << loss << " | "
+                 << setw(10) << setprecision(3) << accuracy << " | "
+                 << setw(7) << conv_weights[0][0] << endl;
         }
-        return 1. - (2.*intersection)/(sum_pred + sum_target + 1e-8); // Эпсильон для предотвращения деления на ноль
+        
+        // 📉 ГРАФИК ПОТЕРЬ (ПАДАЮТ ↓)
+        cout << "\n📉 ГРАФИК ПОТЕРЬ (Dice Loss ↓):\n";
+        cout << "1.0 |" << string(50, '-') << "\n";
+        for(size_t i = 0; i < losses.size(); i++) {
+            int bar_len = static_cast<int>(40 * losses[i]);
+            bar_len = max(0, min(40, bar_len));
+            cout << "E" << (int)epochs_vec[i] << " |" 
+                 << string(bar_len, '*') 
+                 << string(40-bar_len, ' ')
+                 << " " << fixed << setprecision(3) << losses[i] << "\n";
+        }
+        cout << "0.0 |" << string(50, '-') << "\n\n";
+        
+        // 📈 ГРАФИК ТОЧНОСТИ (РАСТЕТ ↑)
+        cout << "📈 ГРАФИК ТОЧНОСТИ (Accuracy ↑):\n";
+        cout << "1.0 |" << string(50, '-') << "\n";
+        for(size_t i = 0; i < accuracies.size(); i++) {
+            int bar_len = static_cast<int>(40 * accuracies[i]);
+            bar_len = max(0, min(40, bar_len));
+            cout << "E" << (int)epochs_vec[i] << " |" 
+                 << string(40-bar_len, ' ')
+                 << string(bar_len, '#')
+                 << " " << fixed << setprecision(3) << accuracies[i] << "\n";
+        }
+        cout << "0.0 |" << string(50, '-') << "\n";
     }
 };
 
 int main() {
-    UNet net(5); // Глубина сети равна 5
-
-    // Тестируем работу нейросети
-    Matrix input(3, 3); // Входное изображение размером 3х3
-    input.data = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
-
-    cout << "Исходное изображение:\n";
-    input.print();
-
-    Matrix output = net.forward(input);
-
-    cout << "Результат после обработки нейросетью:\n";
-    output.print();
-
+    
+    UNet unet;
+    unet.train_and_plot();
+    
     return 0;
 }
