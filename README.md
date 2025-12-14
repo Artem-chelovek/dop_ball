@@ -10,36 +10,6 @@
 // 2. Транспонированные свёртки для upsampling
 // 3. Skip connections
 // 4. Dice loss и его градиент
-40
-Задание 5: Autoencoder для сжатия данных
-Задача: создать автоэнкодер для сжатия и восстановления изображений.
-Код-заготовка (Java):
-class Autoencoder {
-private int inputDim;
-private int encodingDim;
-public Autoencoder(int inputDim, int encodingDim) {
-// TODO: Инициализировать encoder и decoder
-// Encoder: inputDim -> encodingDim
-// Decoder: encodingDim -> inputDim
-public double[] encode(double[] input) {
-// TODO: Сжать входные данные
-public double[] decode(double[] encoded) {
-// TODO: Восстановить данные
-public double reconstructionLoss(double[] input, double[] reconstructed) {
-// TODO: Вычислить MSE между входом и восстановленным
-public void train(double[][] X, int epochs) {
-// TODO: Обучить автоэнкодер
-}
-}
-}
-}
-}
-}
-// Что нужно дополнить:
-// 1. Архитектуру encoder и decoder
-// 2. Функцию потерь MSE
-// 3. Обучение с использованием backpropagation
-// 4. Визуализацию результатов
 
 # 2. Алгоритм работы НС по блокам
 Ниже приведено пошаговое описание алгоритма работы нейросети (НС):
