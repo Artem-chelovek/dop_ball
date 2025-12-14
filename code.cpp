@@ -2,15 +2,25 @@
 #include <vector>
 #include <stdexcept>
 #include <random>
+
 using namespace std;
 
-
-
-struct Matrix { // Упрощённая структура матрицы
+// Структура для представления матрицы
+struct Matrix {
     vector<vector<double>> data;
     int rows, cols;
-    
+
     Matrix(int r, int c) : rows(r), cols(c), data(r, vector<double>(c)) {}
+
+    void print() const {
+        for (const auto& row : data) {
+            for (const auto& val : row) {
+                cout << val << "\t"; // Табуляция для удобства просмотра
+            }
+            cout << endl;
+        }
+        cout << endl;
+    }
 
     void operator+=(const Matrix& other) {
         if (rows != other.rows || cols != other.cols) throw runtime_error("Размеры матриц не совпадают");
@@ -27,7 +37,7 @@ private:
     struct ConvLayer {
         Matrix weights;
         double bias;
-        
+
         ConvLayer(int in_channels, int out_channels, int kernel_size=3) :
             weights(out_channels, in_channels * kernel_size * kernel_size),
             bias(0) {
@@ -40,7 +50,7 @@ private:
                 }
             }
         }
-            
+
         Matrix convolve(const Matrix &input) {
             return input; // Упростили реализацию свёрточного слоя
         }
@@ -77,9 +87,10 @@ public:
         for (size_t i = 0; i < encoders.size(); ++i) {
             current = encoders[i].convolve(current);
             features.push_back(current);       // Сохраняем карту признаков
+            current.print();                   // Печать текущего состояния
             current = pools[i].pool(current);  // Downsample
         }
-        return make_pair(current, features);   // Возвращаем конечную закодированную матрицу и карты признаков
+        return make_pair(current, features);   // Возвращаем закодированную матрицу и карты признаков
     }
 
     Matrix decode(const Matrix& encoded, const vector<Matrix>& skip_connections) {
@@ -88,6 +99,7 @@ public:
             current = decoders[i].upconv(current); // Upsample
             if (!skip_connections.empty())
                 current += skip_connections[i];     // Добавляем пропущенное соединение
+            current.print();                        // Печать текущего состояния
         }
         return current;
     }
@@ -114,9 +126,19 @@ public:
 };
 
 int main() {
-    // Создаем экземпляр сети
-    UNet net(5); // Например, глубина равна 5
-    
-    // Остальные ваши тесты или логика программы
+    UNet net(5); // Глубина сети равна 5
+
+    // Тестируем работу нейросети
+    Matrix input(3, 3); // Входное изображение размером 3х3
+    input.data = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
+
+    cout << "Исходное изображение:\n";
+    input.print();
+
+    Matrix output = net.forward(input);
+
+    cout << "Результат после обработки нейросетью:\n";
+    output.print();
+
     return 0;
 }
